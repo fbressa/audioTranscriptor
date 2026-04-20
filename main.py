@@ -6,7 +6,7 @@ import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 import pydub
-import openai
+import whisper
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv())
@@ -17,18 +17,18 @@ ARQUIVO_AUDIO_TEMP = PASTA_TEMP / 'audio.mp3'
 ARQUIVO_VIDEO_TEMP = PASTA_TEMP / 'video.mp4'
 ARQUIVO_MIC_TEMP = PASTA_TEMP / 'mic.mp3'
 
-client = openai.OpenAI()
+@st.cache_resource
+def load_whisper_model():
+    return whisper.load_model("base")
+
+model = load_whisper_model()
 
 def transcreve_audio(caminho_audio, prompt):
-    with open(caminho_audio, 'rb') as arquivo_audio:
-        transcricao = client.audio.transcriptions.create(
-            model='whisper-1',
-            language='pt',
-            response_format='text',
-            file=arquivo_audio,
-            prompt=prompt
-        )
-    return transcricao
+    kwargs = {'language': 'pt'}
+    if prompt:
+        kwargs['initial_prompt'] = prompt
+    result = model.transcribe(str(caminho_audio), **kwargs)
+    return result["text"]
 
 
 
@@ -91,9 +91,11 @@ def transcreve_tab_mic():
 # Transcreve Video ============================================================
 def salva_audio_do_video(video_bytes):
     with open(ARQUIVO_VIDEO_TEMP, mode='wb') as video_f:
-        video_f.write(video_bytes.read())
+        while chunk := video_bytes.read(1024 * 1024):  # Le em blocos de 1MB
+            video_f.write(chunk)
     moviepy_video = VideoFileClip(str(ARQUIVO_VIDEO_TEMP))
     moviepy_video.audio.write_audiofile(str(ARQUIVO_AUDIO_TEMP))
+    moviepy_video.close()
 
 def transcreve_tab_video():
     prompt_input = st.text_input('(opcional) Digite o seu prompt', key='input_video')
@@ -109,13 +111,10 @@ def transcreve_tab_audio():
     prompt_input = st.text_input('(opcional) Digite o seu prompt', key='input_audio')
     arquivo_audio = st.file_uploader('Adicione um arquivo de áudio .mp3', type=['mp3'])
     if not arquivo_audio is None:
-        transcricao = client.audio.transcriptions.create(
-            model='whisper-1',
-            language='pt',
-            response_format='text',
-            file=arquivo_audio,
-            prompt=prompt_input
-        )
+        with open(ARQUIVO_AUDIO_TEMP, mode='wb') as audio_f:
+            while chunk := arquivo_audio.read(1024 * 1024):
+                audio_f.write(chunk)
+        transcricao = transcreve_audio(ARQUIVO_AUDIO_TEMP, prompt_input)
         st.write(transcricao)
 
 # Main ========================================================================

@@ -1,5 +1,5 @@
 ipykernel
-openai
+openai-whisper
 python-dotenv
 streamlit
 streamlit_webrtc
